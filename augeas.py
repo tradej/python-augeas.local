@@ -38,9 +38,11 @@ Harald Hoyer <harald@redhat.com> - initial python bindings, packaging
 Nils Philippsen <nils@redhat.com>
 """
 
-import types
 import ctypes
 import ctypes.util
+import six
+import sysconfig
+from functools import reduce
 from sys import version_info as _pyver
 
 def _dlopen(*args):
@@ -58,9 +60,9 @@ class Augeas(object):
 
     # Load libpython (for 'PyFile_AsFile()' and 'PyMem_Free()')
     # pylint: disable-msg=W0142
-    _libpython = _dlopen(*["python" + _v % _pyver[:2]
-                           for _v in ("%d.%d", "%d%d")])
-    _libpython.PyFile_AsFile.restype = ctypes.c_void_p
+    _libpython = ctypes.cdll.LoadLibrary(sysconfig.get_config_var('INSTSONAME'))
+    if not six.PY3:
+        _libpython.PyFile_AsFile.restype = ctypes.c_void_p
 
     # Load libaugeas
     _libaugeas = _dlopen("augeas")
@@ -91,15 +93,19 @@ class Augeas(object):
         'flags' is a bitmask made up of values from AUG_FLAGS."""
 
         # Sanity checks
-        if not isinstance(root, basestring) and root != None:
+        if not isinstance(root, six.string_types) and root is not None:
             raise TypeError("root MUST be a string or None!")
-        if not isinstance(loadpath, basestring) and loadpath != None:
+        if not isinstance(loadpath, six.string_types) and loadpath is not None:
             raise TypeError("loadpath MUST be a string or None!")
         if not isinstance(flags, int):
             raise TypeError("flag MUST be a flag!")
 
+        # Encoding for Python 3
+        safe_root = root if (not six.PY3 or root is None) else root.encode('utf-8')
+        safe_loadpath = loadpath if (not six.PY3 or loadpath is None) else loadpath.encode('utf-8')
+
         # Create the Augeas object
-        self.__handle = Augeas._libaugeas.aug_init(root, loadpath, flags)
+        self.__handle = Augeas._libaugeas.aug_init(safe_root, safe_loadpath, flags)
         if not self.__handle:
             raise RuntimeError("Unable to create Augeas object!")
         # Make sure self.__handle is a void*, not an integer
@@ -114,7 +120,7 @@ class Augeas(object):
         It is an error if more than one node matches 'path'."""
 
         # Sanity checks
-        if not isinstance(path, basestring):
+        if not isinstance(path, six.string_types):
             raise TypeError("path MUST be a string!")
         if not self.__handle:
             raise RuntimeError("The Augeas object has already been closed!")
@@ -122,13 +128,19 @@ class Augeas(object):
         # Create the char * value
         value = ctypes.c_char_p()
 
+        # Encoding for Python 3
+        safe_path = path if not six.PY3 else path.encode('utf-8')
+
         # Call the function and pass value by reference (char **)
-        ret = Augeas._libaugeas.aug_get(self.__handle, path,
+        ret = Augeas._libaugeas.aug_get(self.__handle, safe_path,
                                         ctypes.byref(value))
         if ret > 1:
             raise ValueError("path specified had too many matches!")
 
-        return value.value
+        if not six.PY3 or not isinstance(value.value, bytes):
+            return value.value
+        else:
+            return value.value.decode('utf-8')
 
     def set(self, path, value):
         """Set the value associated with 'path' to 'value'.
@@ -136,15 +148,19 @@ class Augeas(object):
         It is an error if more than one node matches 'path'."""
 
         # Sanity checks
-        if not isinstance(path, basestring):
+        if not isinstance(path, six.string_types):
             raise TypeError("path MUST be a string!")
-        if not isinstance(value, basestring) and type(value) != types.NoneType:
+        if not isinstance(value, six.string_types) and value is not None:
             raise TypeError("value MUST be a string or None!")
         if not self.__handle:
             raise RuntimeError("The Augeas object has already been closed!")
 
+        # Encoding for Python 3
+        safe_path = path if not six.PY3 else path.encode('utf-8')
+        safe_value = value if not six.PY3 else value.encode('utf-8')
+
         # Call the function
-        ret = Augeas._libaugeas.aug_set(self.__handle, path, value)
+        ret = Augeas._libaugeas.aug_set(self.__handle, safe_path, safe_value)
         if ret != 0:
             raise ValueError("Unable to set value to path!")
 
@@ -157,18 +173,23 @@ class Augeas(object):
 
         # Sanity checks
         if type(base) != str:
-            raise TypeError, "base MUST be a string!"
-        if type(sub) != str and sub != None:
-            raise TypeError, "sub MUST be a string or None!"
+            raise TypeError("base MUST be a string!")
+        if type(sub) != str and sub is not None:
+            raise TypeError("sub MUST be a string or None!")
         if type(value) != str:
-            raise TypeError, "value MUST be a string!"
+            raise TypeError("value MUST be a string!")
         if not self.__handle:
-            raise RuntimeError, "The Augeas object has already been closed!"
+            raise RuntimeError("The Augeas object has already been closed!")
+
+        # Encoding for Python 3
+        safe_base = base if not six.PY3 else base.encode('utf-8')
+        safe_sub = sub if not six.PY3 else sub.encode('utf-8')
+        safe_value = value if not six.PY3 else value.encode('utf-8')
 
         # Call the function
-        ret = Augeas._libaugeas.aug_setm(self.__handle, base, sub, value)
+        ret = Augeas._libaugeas.aug_setm(self.__handle, safe_base, safe_sub, safe_value)
         if ret < 0:
-            raise ValueError, "Unable to set value to path!"
+            raise ValueError("Unable to set value to path!")
         return ret
 
     def defvar(self, name, expr):
@@ -184,16 +205,20 @@ class Augeas(object):
 
         # Sanity checks
         if type(name) != str:
-            raise TypeError, "name MUST be a string!"
-        if type(expr) != str and expr != None:
-            raise TypeError, "expr MUST be a string or None!"
+            raise TypeError("name MUST be a string!")
+        if type(expr) != str and expr is not None:
+            raise TypeError("expr MUST be a string or None!")
         if not self.__handle:
-            raise RuntimeError, "The Augeas object has already been closed!"
+            raise RuntimeError("The Augeas object has already been closed!")
+
+        # Encoding for Python 3
+        safe_name = name if not six.PY3 else name.encode('utf-8')
+        safe_expr = expr if not six.PY3 else expr.encode('utf-8')
 
         # Call the function
-        ret = Augeas._libaugeas.aug_defvar(self.__handle, name, expr)
+        ret = Augeas._libaugeas.aug_defvar(self.__handle, safe_name, safe_expr)
         if ret < 0:
-            raise ValueError, "Unable to register variable!"
+            raise ValueError("Unable to register variable!")
         return ret
 
     def defnode(self, name, expr, value):
@@ -208,18 +233,24 @@ class Augeas(object):
 
         # Sanity checks
         if type(name) != str:
-            raise TypeError, "name MUST be a string!"
+            raise TypeError("name MUST be a string!")
         if type(expr) != str:
-            raise TypeError, "expr MUST be a string!"
+            raise TypeError("expr MUST be a string!")
         if type(value) != str:
-            raise TypeError, "value MUST be a string!"
+            raise TypeError("value MUST be a string!")
         if not self.__handle:
-            raise RuntimeError, "The Augeas object has already been closed!"
+            raise RuntimeError("The Augeas object has already been closed!")
+
+        # Encoding for Python 3
+        safe_name = name if not six.PY3 else name.encode('utf-8')
+        safe_expr = expr if not six.PY3 else expr.encode('utf-8')
+        safe_value = value if not six.PY3 else value.encode('utf-8')
 
         # Call the function
-        ret = Augeas._libaugeas.aug_defnode(self.__handle, name, expr, value, None)
+        ret = Augeas._libaugeas.aug_defnode(self.__handle, safe_name,\
+                                            safe_expr, safe_value, None)
         if ret < 0:
-            raise ValueError, "Unable to register node!"
+            raise ValueError("Unable to register node!")
         return ret
 
     def move(self, src, dst):
@@ -230,15 +261,19 @@ class Augeas(object):
            does not exist yet, it and all its missing ancestors are created."""
 
         # Sanity checks
-        if not isinstance(src, basestring):
+        if not isinstance(src, six.string_types):
             raise TypeError("src MUST be a string!")
-        if not isinstance(dst, basestring):
+        if not isinstance(dst, six.string_types):
             raise TypeError("dst MUST be a string!")
         if not self.__handle:
             raise RuntimeError("The Augeas object has already been closed!")
 
+        # Encoding for Python 3
+        safe_src = src if not six.PY3 else src.encode('utf-8')
+        safe_dst = dst if not six.PY3 else dst.encode('utf-8')
+
         # Call the function
-        ret = Augeas._libaugeas.aug_mv(self.__handle, src, dst)
+        ret = Augeas._libaugeas.aug_mv(self.__handle, safe_src, safe_dst)
         if ret != 0:
             raise ValueError("Unable to move src to dst!")
 
@@ -252,16 +287,20 @@ class Augeas(object):
         index '[N]'."""
 
         # Sanity checks
-        if not isinstance(path, basestring):
+        if not isinstance(path, six.string_types):
             raise TypeError("path MUST be a string!")
-        if not isinstance(label, basestring):
+        if not isinstance(label, six.string_types):
             raise TypeError("label MUST be a string!")
         if not self.__handle:
             raise RuntimeError("The Augeas object has already been closed!")
 
+        # Encoding for Python 3
+        safe_path = path if not six.PY3 else path.encode('utf-8')
+        safe_label = label if not six.PY3 else label.encode('utf-8')
+
         # Call the function
-        ret = Augeas._libaugeas.aug_insert(self.__handle, path,
-                                           label, before and 1 or 0)
+        ret = Augeas._libaugeas.aug_insert(self.__handle, safe_path,
+                                           safe_label, before and 1 or 0)
         if ret != 0:
             raise ValueError("Unable to insert label!")
 
@@ -271,13 +310,16 @@ class Augeas(object):
         removed."""
 
         # Sanity checks
-        if not isinstance(path, basestring):
+        if not isinstance(path, six.string_types):
             raise TypeError("path MUST be a string!")
         if not self.__handle:
             raise RuntimeError("The Augeas object has already been closed!")
 
+        # Encoding for Python 3
+        safe_path = path if not six.PY3 else path.encode('utf-8')
+
         # Call the function
-        return Augeas._libaugeas.aug_rm(self.__handle, path)
+        return Augeas._libaugeas.aug_rm(self.__handle, safe_path)
 
     def match(self, path):
         """Return the matches of the path expression 'path'. The returned paths
@@ -296,17 +338,20 @@ class Augeas(object):
         matches more than one path segment."""
 
         # Sanity checks
-        if not isinstance(path, basestring):
+        if not isinstance(path, six.string_types):
             raise TypeError("path MUST be a string!")
         if not self.__handle:
             raise RuntimeError("The Augeas object has already been closed!")
+
+        # Encoding for Python 3
+        safe_path = path if not six.PY3 else path.encode('utf-8')
 
         # Create a void ** (this is so python won't mangle the char **,
         # when we free it)
         array = ctypes.POINTER(ctypes.c_void_p)()
 
         # Call the function and pass the void ** by reference (void ***)
-        ret = Augeas._libaugeas.aug_match(self.__handle, path,
+        ret = Augeas._libaugeas.aug_match(self.__handle, safe_path,
                                           ctypes.byref(array))
         if ret < 0:
             raise RuntimeError("Error during match procedure!")
@@ -316,8 +361,8 @@ class Augeas(object):
         for i in range(ret):
             if array[i]:
                 # Create a python string and append it to our matches list
-                matches.append(str(ctypes.cast(array[i],
-                                               ctypes.c_char_p).value))
+                value = ctypes.cast(array[i], ctypes.c_char_p).value
+                matches.append(str(value) if not six.PY3 else value.decode('utf-8'))
 
                 # Free the string at this point in the array
                 # Wrap the string as a void* as it was not allocated by Python
@@ -336,10 +381,13 @@ class Augeas(object):
         belong to a file or is doesn't exists, ValueError is raised."""
 
         # Sanity checks
-        if not isinstance(path, basestring):
+        if not isinstance(path, six.string_types):
             raise TypeError("path MUST be a string!")
         if not self.__handle:
             raise RuntimeError("The Augeas object has already been closed!")
+
+        # Encoding for Python 3
+        safe_path = path if not six.PY3 else path.encode('utf-8')
 
         filename = ctypes.c_char_p()
         label_start = ctypes.c_uint()
@@ -351,14 +399,15 @@ class Augeas(object):
 
         r = ctypes.byref
 
-        ret = Augeas._libaugeas.aug_span(self.__handle, path, r(filename),
+        ret = Augeas._libaugeas.aug_span(self.__handle, safe_path, r(filename),
                                          r(label_start), r(label_end),
                                          r(value_start), r(value_end),
                                          r(span_start), r(span_end))
         if (ret < 0):
             raise ValueError("Error during span procedure")
 
-        return (filename.value, label_start.value, label_end.value,
+        return (filename.value if not six.PY3 else filename.value.decode('utf-8'),
+                label_start.value, label_end.value,
                 value_start.value, value_end.value,
                 span_start.value, span_end.value)
 
@@ -432,9 +481,9 @@ class Augeas(object):
 
         if not name:
             name = lens.split(".")[0].replace("@", "", 1)
-        if isinstance (incl, basestring):
+        if type(incl) in six.string_types:
             incl = [incl]
-        if isinstance (excl, basestring):
+        if type(excl) in six.string_types:
             excl = [excl]
 
         xfm = "/augeas/load/%s/" % name

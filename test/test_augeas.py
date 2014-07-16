@@ -1,6 +1,7 @@
-import unittest
-import sys
 import os
+import six
+import sys
+import unittest
 
 __mydir = os.path.dirname(sys.argv[0])
 if not os.path.isdir(__mydir):
@@ -34,7 +35,7 @@ class TestAugeas(unittest.TestCase):
     def test01Get(self):
         "test aug_get"
         a = augeas.Augeas(root=MYROOT)
-        self.failUnless(a.get("/wrong/path") == None)
+        self.failUnless(a.get("/wrong/path") is None)
         del a
 
     def test02Match(self):
@@ -44,7 +45,7 @@ class TestAugeas(unittest.TestCase):
         self.failUnless(matches)
         for i in matches:
             for attr in a.match(i+"/*"):
-                self.failUnless(a.get(attr) != None)
+                self.failUnless(a.get(attr) is not None)
         del a
 
     def test03PrintAll(self):
@@ -54,8 +55,8 @@ class TestAugeas(unittest.TestCase):
         path = "/"
         matches = recurmatch(a, path)
         for (p, attr) in matches:
-            print >> output, p, attr
-            self.failUnless(p != None and attr != None)
+            six.print_(p, attr, file=output)
+            self.failUnless(p is not None and attr is not None)
         output.close()
 
     def test04Grub(self):
@@ -82,7 +83,7 @@ class TestAugeas(unittest.TestCase):
         self.failUnless(matches)
         for i in matches:
             for attr in a.match(i+"/*"):
-                self.failUnless(a.get(attr) != None)
+                self.failUnless(a.get(attr) is not None)
         del a
         
     def test06Defnode(self):
@@ -127,19 +128,11 @@ class TestAugeas(unittest.TestCase):
             self.assertEquals(r[5], d["ss"])
             self.assertEquals(r[6], d["se"])
 
-        error = None
-        try:
-            r = a.span("/files")
-        except ValueError, e:
-            error = e
-        self.assertTrue(isinstance(e, ValueError))
+        with self.assertRaises(ValueError):
+            a.span("/files")
 
-        error = None
-        try:
-            r = a.span("/random")
-        except ValueError, e:
-            error = e
-        self.assertTrue(isinstance(e, ValueError))
+        with self.assertRaises(ValueError):
+            a.span("/random")
 
         del a
 
