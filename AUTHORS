@@ -6,3 +6,6 @@ python-augeas is written by:
   Jeff Schroeder <jeffschroeder@computer.org>
   Harald Hoyer <harald@redhat.com>
   Nils Philippsen <nils@redhat.com>
+
+modifications for Python 3 compatibility made by:
+  Tomas Radej <tradej@redhat.com>
